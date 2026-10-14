@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 512 512">
+    <defs>
+      <radialGradient id="g" cx="30%" cy="20%" r="90%">
+        <stop offset="0" stop-color="#ff7a45"/>
+        <stop offset="1" stop-color="#e94a10"/>
+      </radialGradient>
+    </defs>
+    <rect width="512" height="512" rx="112" fill="url(#g)"/>
+    
+    <g transform="translate(0 0) scale(1)">
+      <g transform="rotate(-10 256 280)">
+        <rect x="222" y="318" width="68" height="160" rx="18" fill="#6b4a2b"/>
+        <rect x="222" y="318" width="68" height="34" fill="#000" opacity=".25"/>
+        <circle cx="256" cy="212" r="150" fill="#0f0e0c"/>
+        <g fill="#f3eee4" transform="translate(256 290)"><path transform="translate(-36.80 0) scale(0.23 -0.23)" d="M64 202Q57 241 62 268Q67 295 79 315Q91 335 106 351.5Q121 368 135 384Q149 400 158.5 420Q168 440 168 467Q168 508 147.5 524.5Q127 541 101 541Q82 541 65 534Q48 527 34 515.5Q20 504 9 490L3 619Q19 636 40.5 647.5Q62 659 88 665Q114 671 143 671Q178 671 209.5 662Q241 653 265 633Q289 613 303 581.5Q317 550 317 506Q317 463 304.5 431Q292 399 273 375Q254 351 233 331Q212 311 194 291.5Q176 272 166 251Q156 230 159 202ZM115 -13Q77 -13 58.5 9.5Q40 32 40 77Q40 123 58.5 145.5Q77 168 115 168Q153 168 171.5 145.5Q190 123 190 77Q190 -13 115 -13Z"/></g>
+      </g>
+    </g>
+  </svg>
