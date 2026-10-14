@@ -1629,6 +1629,7 @@ img.thumb-logo {
 
   .player .slots {
     margin-top: 10px;
+    grid-template-columns: repeat(var(--n, 5), minmax(0, 48px));
   }
 
   .center .flip {
