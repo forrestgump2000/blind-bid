@@ -26,3 +26,4 @@ dist-ssr
 # image resolver scratch
 scripts/.image-audit.json
 .claude/
+.vercel
