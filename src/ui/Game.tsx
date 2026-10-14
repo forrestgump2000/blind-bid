@@ -75,17 +75,31 @@ function Stamp({ outcome, seat, g }: { outcome: Outcome; seat: Seat; g: GameStat
   )
 }
 
-function DumpSheet({ max, them, onClose, onDump }: { max: number; them: string; onClose: () => void; onDump: (n: number) => void }) {
-  const [n, setN] = useState(Math.min(1, max))
+function AmountSheet({
+  title,
+  body,
+  min,
+  max,
+  confirm,
+  onClose,
+  onConfirm,
+}: {
+  title: string
+  body: string
+  min: number
+  max: number
+  confirm: (n: number) => string
+  onClose: () => void
+  onConfirm: (n: number) => void
+}) {
+  const [n, setN] = useState(min)
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h3>Pay {them} to take it</h3>
-        <p>
-          The lot goes straight onto {them}’s roster and the cash comes out of your wallet into theirs. No bidding, no take-backs.
-        </p>
+        <h3>{title}</h3>
+        <p>{body}</p>
         <div className="stepper">
-          <button onClick={() => setN((v) => Math.max(1, v - 1))} disabled={n <= 1} aria-label="Less">
+          <button onClick={() => setN((v) => Math.max(min, v - 1))} disabled={n <= min} aria-label="Less">
             −
           </button>
           <div className="val">${n}</div>
@@ -97,8 +111,8 @@ function DumpSheet({ max, them, onClose, onDump }: { max: number; them: string; 
           <button className="btn btn-ghost" onClick={onClose}>
             Never mind
           </button>
-          <button className="btn btn-teal" onClick={() => onDump(n)}>
-            Pay ${n}
+          <button className="btn btn-teal" onClick={() => onConfirm(n)}>
+            {confirm(n)}
           </button>
         </div>
       </div>
@@ -115,6 +129,11 @@ function headline(g: GameState, seat: Seat): string {
     if (o.kind === 'dumped') return `${nm(o.from)} paid ${nm(o.to) === 'You' ? 'you' : nm(o.to)} $${o.amount} to take it`
     return `${nm(o.seat)} ${o.seat === seat ? 'got' : 'gets'} it for $${o.amount}`
   }
+  if (r.offer) {
+    const o = r.offer
+    if (o.kind === 'pay') return o.from === seat ? `You offered $${o.amount}` : `${nm(o.from)} offers you $${o.amount}`
+    return o.from === seat ? `You asked for $${o.amount}` : `${nm(o.from)} wants $${o.amount}`
+  }
   if (r.high) return r.high.by === seat ? 'You’re winning' : `${g.players[r.high.by].name} is winning`
   if (r.passes) return `${nm(other(r.turn))} ${other(r.turn) === seat ? 'want' : 'wants'} to pass`
   return 'Opening bid is $1'
@@ -130,7 +149,7 @@ export function Game({ room }: { room: Room }) {
   const cat = getCategory(g.settings.categoryId)
   const opt = options(g, seat)
   const myTurn = !r.resolved && r.turn === seat
-  const [dumping, setDumping] = useState(false)
+  const [sheet, setSheet] = useState<null | 'dump' | 'ask' | 'sendback'>(null)
   // The stepper snaps back to the minimum whenever the floor moves.
   const floorKey = `${r.lot}:${opt.minBid}`
   const [pick, setPick] = useState({ key: floorKey, amount: opt.minBid })
@@ -152,6 +171,9 @@ export function Game({ room }: { room: Room }) {
 
   const turnText = useMemo(() => {
     if (r.resolved) return 'Next lot coming up'
+    if (myTurn && opt.offer) {
+      return opt.offer.kind === 'pay' ? `${opp.name} will pay you $${opt.offer.amount} to take this` : `${opp.name} vetoed and wants $${opt.offer.amount}`
+    }
     if (myTurn) {
       if (opt.solo) return `${opp.name} is full — it’s just you now`
       if (r.high && r.high.by === them) return `${opp.name} bid $${r.high.amount}. Your call.`
@@ -159,10 +181,12 @@ export function Game({ room }: { room: Room }) {
       return 'Your move'
     }
     return `Waiting on ${opp.name}`
-  }, [r, myTurn, opt.solo, opt.canPass, opp.name, them])
+  }, [r, myTurn, opt.solo, opt.canPass, opt.offer, opp.name, them])
 
   const passesLeft = tossesLeft(g)
-  const highBy = r.high ? (r.high.by === seat ? 'you' : 'them') : 'none'
+  const paddleBy = r.offer ? r.offer.from : r.high?.by
+  const highBy = paddleBy === undefined ? 'none' : paddleBy === seat ? 'you' : 'them'
+  const paddleAmount = r.offer?.amount ?? r.high?.amount
   const lotLabel = `Lot ${String(r.lot).padStart(2, '0')}`
 
   return (
@@ -199,11 +223,11 @@ export function Game({ room }: { room: Room }) {
           </div>
           <div className="stage-info">
             <div className="highbid">
-              <span key={`${r.lot}-${r.high?.amount ?? 0}`} className={`paddle ${highBy} ${r.high ? 'raise' : ''}`}>
-                {r.high ? `$${r.high.amount}` : '—'}
+              <span key={`${r.lot}-${paddleAmount ?? 0}-${r.offer?.kind ?? ''}`} className={`paddle ${highBy} ${paddleAmount ? 'raise' : ''}`}>
+                {paddleAmount ? `$${paddleAmount}` : '—'}
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="what">{r.resolved ? 'Final' : r.high ? 'High bid' : 'No bids yet'}</div>
+                <div className="what">{r.resolved ? 'Final' : r.offer ? (r.offer.kind === 'pay' ? 'Paid to take it' : 'Counter-offer') : r.high ? 'High bid' : 'No bids yet'}</div>
                 <div className="amt">{headline(g, seat)}</div>
               </div>
             </div>
@@ -223,7 +247,43 @@ export function Game({ room }: { room: Room }) {
             {!myTurn && !r.resolved && <span className="waiting-dots eyebrow" />}
           </div>
 
-          {myTurn && (
+          {myTurn && opt.offer && (
+            <>
+              {opt.offer.kind === 'pay' ? (
+                <>
+                  <button className="btn btn-teal btn-lg" disabled={!opt.canTake} onClick={() => room.act({ type: 'take' })}>
+                    Take it · +${opt.offer.amount}
+                  </button>
+                  <div className="two">
+                    <button className="btn btn-ghost" onClick={() => room.act({ type: 'veto' })}>
+                      Veto
+                    </button>
+                    <button className="btn btn-ghost" disabled={!opt.canAsk} onClick={() => setSheet('ask')}>
+                      Veto · ask for more
+                    </button>
+                  </div>
+                  {opt.canSendBack && (
+                    <button className="btn btn-ghost" style={{ color: 'var(--you)' }} onClick={() => setSheet('sendback')}>
+                      Pay them to take it instead
+                    </button>
+                  )}
+                  <div className="dump-note">A veto kills the deal and the lot goes back to normal bidding.</div>
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-primary btn-lg" disabled={!opt.canAccept} onClick={() => room.act({ type: 'accept' })}>
+                    Pay ${opt.offer.amount} · they take it
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => room.act({ type: 'refuse' })}>
+                    No deal
+                  </button>
+                  <div className="dump-note">No deal ends the paying on this lot. You’ll have to bid or pass.</div>
+                </>
+              )}
+            </>
+          )}
+
+          {myTurn && !opt.offer && (
             <>
               {opt.canBid && (
                 <>
@@ -269,7 +329,7 @@ export function Game({ room }: { room: Room }) {
                   </button>
                 )}
                 {opt.canDump && (
-                  <button className="btn btn-ghost" onClick={() => setDumping(true)} style={{ color: 'var(--them)' }}>
+                  <button className="btn btn-ghost" onClick={() => setSheet('dump')} style={{ color: 'var(--them)' }}>
                     Pay them to take it
                   </button>
                 )}
@@ -279,7 +339,11 @@ export function Game({ room }: { room: Room }) {
 
           {!myTurn && !r.resolved && (
             <div className="dump-note">
-              {r.high?.by === seat
+              {r.offer
+                ? r.offer.kind === 'pay'
+                  ? `${opp.name} can take your $${r.offer.amount}, veto it, ask for more, or pay you to take it instead.`
+                  : `${opp.name} can pay your $${r.offer.amount}, or say no deal.`
+                : r.high?.by === seat
                 ? `You’re on $${r.high.amount}. ${opp.name} can raise, or let it go.`
                 : r.passes === 1 && passesLeft > 0
                   ? `You want to pass. ${opp.name} has to agree, or bid instead.`
@@ -297,14 +361,45 @@ export function Game({ room }: { room: Room }) {
         </button>
       </div>
 
-      {dumping && (
-        <DumpSheet
+      {sheet === 'dump' && (
+        <AmountSheet
+          title={`Pay ${opp.name} to take it`}
+          body={`${opp.name} can take the cash and the lot, veto it, ask for more, or pay you to take it instead. Money only moves if a deal is made.`}
+          min={1}
           max={opt.maxDump}
-          them={opp.name}
-          onClose={() => setDumping(false)}
-          onDump={(n) => {
-            setDumping(false)
+          confirm={(n) => `Offer $${n}`}
+          onClose={() => setSheet(null)}
+          onConfirm={(n) => {
+            setSheet(null)
             room.act({ type: 'dump', amount: n })
+          }}
+        />
+      )}
+      {sheet === 'ask' && opt.offer && (
+        <AmountSheet
+          title="Veto and ask for more"
+          body={`${opp.name} offered $${opt.offer.amount}. Name your price. They can pay it or say no deal.`}
+          min={opt.minAsk}
+          max={opt.maxAsk}
+          confirm={(n) => `Ask for $${n}`}
+          onClose={() => setSheet(null)}
+          onConfirm={(n) => {
+            setSheet(null)
+            room.act({ type: 'ask', amount: n })
+          }}
+        />
+      )}
+      {sheet === 'sendback' && opt.offer && (
+        <AmountSheet
+          title={`Pay ${opp.name} to take it instead`}
+          body={`Send it back with at least the $${opt.offer.amount} they offered. Then it’s their call.`}
+          min={opt.minSendBack}
+          max={opt.maxSendBack}
+          confirm={(n) => `Pay $${n}`}
+          onClose={() => setSheet(null)}
+          onConfirm={(n) => {
+            setSheet(null)
+            room.act({ type: 'sendback', amount: n })
           }}
         />
       )}

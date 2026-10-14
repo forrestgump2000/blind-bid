@@ -42,7 +42,23 @@ export interface Round {
   passes: number
   log: LogLine[]
   resolved: boolean
+  // A pending "I'll pay you to take it" deal. 'pay': `from` pays `to` if `to` takes the lot.
+  // 'ask': `from` will take the lot if `to` pays them `amount`.
+  offer?: Offer | null
+  offers?: number // how many times the lot has been passed back and forth this round
+  offersClosed?: boolean // a veto or refused counter ends negotiating on this lot
 }
+
+export interface Offer {
+  kind: 'pay' | 'ask'
+  from: Seat
+  to: Seat
+  amount: number
+  payer: Seat // whoever started paying; the turn returns to them if the deal dies
+}
+
+// Sending a lot back and forth can't go on forever.
+export const MAX_OFFERS = 6
 
 export type Outcome =
   | { kind: 'won'; seat: Seat; amount: number; item: Item; reason: 'fold' | 'all-in' | 'solo' }
@@ -74,6 +90,12 @@ export type Action =
   | { type: 'fold' }
   | { type: 'pass' }
   | { type: 'dump'; amount: number }
+  | { type: 'take' }
+  | { type: 'veto' }
+  | { type: 'ask'; amount: number }
+  | { type: 'sendback'; amount: number }
+  | { type: 'accept' }
+  | { type: 'refuse' }
   | { type: 'vote'; for: Seat }
 
 export const DEFAULT_SETTINGS: Settings = { categoryId: 'current-nba', budget: 20, slots: 5 }
@@ -191,15 +213,69 @@ export interface Options {
   canDump: boolean
   maxDump: number
   solo: boolean
+  // answering a pending offer
+  offer: Offer | null
+  canTake: boolean
+  canVeto: boolean
+  canAsk: boolean
+  minAsk: number
+  maxAsk: number
+  canSendBack: boolean
+  minSendBack: number
+  maxSendBack: number
+  canAccept: boolean
+  canRefuse: boolean
 }
 
 export function options(g: GameState, seat: Seat): Options {
-  const none: Options = { canBid: false, minBid: 0, maxBid: 0, canFold: false, canPass: false, canDump: false, maxDump: 0, solo: false }
+  const none: Options = {
+    canBid: false,
+    minBid: 0,
+    maxBid: 0,
+    canFold: false,
+    canPass: false,
+    canDump: false,
+    maxDump: 0,
+    solo: false,
+    offer: null,
+    canTake: false,
+    canVeto: false,
+    canAsk: false,
+    minAsk: 0,
+    maxAsk: 0,
+    canSendBack: false,
+    minSendBack: 0,
+    maxSendBack: 0,
+    canAccept: false,
+    canRefuse: false,
+  }
   const r = g.round
   if (g.phase !== 'playing' || !r || r.resolved || r.turn !== seat) return none
   const me = g.players[seat]
   const them = other(seat)
   const solo = isFull(g, them)
+
+  const o = r.offer
+  if (o && o.to === seat) {
+    if (o.kind === 'ask') {
+      return { ...none, offer: o, canAccept: me.money >= o.amount, canRefuse: true }
+    }
+    const payerMoney = g.players[o.from].money
+    const canBounce = (r.offers ?? 0) < MAX_OFFERS && !isFull(g, o.from)
+    return {
+      ...none,
+      offer: o,
+      canTake: payerMoney >= o.amount,
+      canVeto: true,
+      canAsk: payerMoney > o.amount,
+      minAsk: o.amount + 1,
+      maxAsk: payerMoney,
+      canSendBack: canBounce && me.money >= o.amount,
+      minSendBack: o.amount,
+      maxSendBack: me.money,
+    }
+  }
+
   const minBid = (r.high?.amount ?? 0) + 1
   const left = tossesLeft(g)
   const canBid = me.money >= minBid
@@ -211,12 +287,13 @@ export function options(g: GameState, seat: Seat): Options {
     else canPass = left > 0 || !canBid
   }
   return {
+    ...none,
     canBid,
     minBid,
     maxBid: me.money,
     canFold: !!r.high && r.high.by === them,
     canPass,
-    canDump: !r.high && !solo && me.money >= 1,
+    canDump: !r.high && !solo && !r.offersClosed && me.money >= 1,
     maxDump: me.money,
     solo,
   }
@@ -274,11 +351,43 @@ export function apply(g: GameState, seat: Seat, action: Action): GameState {
     case 'dump': {
       const amount = Math.floor(action.amount)
       if (!opt.canDump || amount < 1 || amount > opt.maxDump) return g
-      next = award(
-        { ...g, round: { ...r, log: log(`${name} paid ${money(amount)} to make ${g.players[them].name} take it`) } },
-        { kind: 'dumped', from: seat, to: them, amount, item: r.item },
-      )
+      const offer: Offer = { kind: 'pay', from: seat, to: them, amount, payer: seat }
+      return { ...g, rev: g.rev + 1, round: { ...r, offer, offers: 1, passes: 0, turn: them, log: log(`${name} offered ${money(amount)} to make ${g.players[them].name} take it`) } }
+    }
+    case 'take': {
+      const o = r.offer
+      if (!opt.canTake || !o) return g
+      next = award({ ...g, round: { ...r, offer: null, log: log(`${name} took the ${money(o.amount)}`) } }, { kind: 'dumped', from: o.from, to: seat, amount: o.amount, item: r.item })
       break
+    }
+    case 'accept': {
+      // Pay what they asked; they take the lot.
+      const o = r.offer
+      if (!opt.canAccept || !o) return g
+      next = award({ ...g, round: { ...r, offer: null, log: log(`${name} paid the ${money(o.amount)}`) } }, { kind: 'dumped', from: seat, to: o.from, amount: o.amount, item: r.item })
+      break
+    }
+    case 'veto':
+    case 'refuse': {
+      const o = r.offer
+      if (!o || (action.type === 'veto' ? !opt.canVeto : !opt.canRefuse)) return g
+      const text = action.type === 'veto' ? `${name} vetoed it` : `${name} said no deal`
+      return { ...g, rev: g.rev + 1, round: { ...r, offer: null, offersClosed: true, turn: o.payer, log: log(text) } }
+    }
+    case 'ask': {
+      const o = r.offer
+      const amount = Math.floor(action.amount)
+      if (!opt.canAsk || !o || amount < opt.minAsk || amount > opt.maxAsk) return g
+      const offer: Offer = { kind: 'ask', from: seat, to: o.from, amount, payer: o.payer }
+      return { ...g, rev: g.rev + 1, round: { ...r, offer, turn: o.from, log: log(`${name} vetoed — wants ${money(amount)} to take it`) } }
+    }
+    case 'sendback': {
+      const o = r.offer
+      const amount = Math.floor(action.amount)
+      if (!opt.canSendBack || !o || amount < opt.minSendBack || amount > opt.maxSendBack) return g
+      const offer: Offer = { kind: 'pay', from: seat, to: o.from, amount, payer: seat }
+      const text = amount > o.amount ? `${name} sent it back with ${money(amount)}` : `${name} sent it back, matching ${money(amount)}`
+      return { ...g, rev: g.rev + 1, round: { ...r, offer, offers: (r.offers ?? 0) + 1, turn: o.from, log: log(text) } }
     }
     default:
       return g

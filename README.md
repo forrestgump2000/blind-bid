@@ -11,7 +11,7 @@ Players take turns. Who opens alternates every lot.
 - **Bid** – raise the high bid by at least $1.
 - **Let it go** – when they've outbid you, fold and they pay what they bid.
 - **Pass** – if nobody has bid yet. The lot is only tossed if both players agree to pass, and each game allows 3 agreed passes.
-- **Pay them to take it** – hand your opponent some cash and the lot goes straight onto their roster.
+- **Pay them to take it** – offer your opponent cash to take the lot. They can take it, veto it, veto and ask for more (you pay or say no deal), or pay you the same or more to take it instead. A veto or a refused counter ends the haggling and the lot goes back to normal play.
 
 If you bid as much as your opponent has left, they can't answer and the lot is yours on the spot. Once one roster is full the other player picks up lots alone. When someone runs dry (or the deck runs out) any empty slots are filled with random leftovers.
 
