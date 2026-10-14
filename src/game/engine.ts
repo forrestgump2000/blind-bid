@@ -61,8 +61,13 @@ export interface GameState {
   lot: number
   deckSize: number
   votes: (Seat | null)[]
+  tosses?: number // lots both players agreed to pass on
   rev: number
 }
+
+// Passing needs both players to agree, and a game only allows this many agreed passes.
+export const PASS_LIMIT = 3
+export const tossesLeft = (g: GameState) => PASS_LIMIT - (g.tosses ?? 0)
 
 export type Action =
   | { type: 'bid'; amount: number }
@@ -86,6 +91,7 @@ export function newGame(code: string, host: { id: string; name: string }): GameS
     lot: 0,
     deckSize: 0,
     votes: [null, null],
+    tosses: 0,
     rev: 0,
   }
 }
@@ -117,6 +123,7 @@ export function startGame(g: GameState): GameState {
     last: null,
     lot: 0,
     votes: [null, null],
+    tosses: 0,
     players: g.players.map((p) => ({ ...p, money: g.settings.budget, roster: [] })),
     round: null,
   }
@@ -171,7 +178,8 @@ function award(g: GameState, outcome: Outcome): GameState {
   } else {
     discard = [...discard, outcome.item]
   }
-  return { ...g, players, discard, last: outcome, round: g.round ? { ...g.round } : null }
+  const tosses = (g.tosses ?? 0) + (outcome.kind === 'passed' ? 1 : 0)
+  return { ...g, players, discard, tosses, last: outcome, round: g.round ? { ...g.round } : null }
 }
 
 export interface Options {
@@ -193,12 +201,21 @@ export function options(g: GameState, seat: Seat): Options {
   const them = other(seat)
   const solo = isFull(g, them)
   const minBid = (r.high?.amount ?? 0) + 1
+  const left = tossesLeft(g)
+  const canBid = me.money >= minBid
+  // Opening pass = a proposal; answering pass = agreeing to toss it. Once the limit is
+  // used up, only a broke player may pass, and that just hands the decision over.
+  let canPass = false
+  if (!r.high) {
+    if (solo || r.passes > 0) canPass = left > 0
+    else canPass = left > 0 || !canBid
+  }
   return {
-    canBid: me.money >= minBid,
+    canBid,
     minBid,
     maxBid: me.money,
     canFold: !!r.high && r.high.by === them,
-    canPass: !r.high,
+    canPass,
     canDump: !r.high && !solo && me.money >= 1,
     maxDump: me.money,
     solo,
@@ -247,9 +264,10 @@ export function apply(g: GameState, seat: Seat, action: Action): GameState {
       if (!opt.canPass) return g
       const passes = r.passes + 1
       if (opt.solo || passes >= 2) {
-        next = award({ ...g, round: { ...r, log: log(`${name} passed`) } }, { kind: 'passed', item: r.item })
+        next = award({ ...g, round: { ...r, log: log(opt.solo ? `${name} passed` : `${name} agreed to pass`) } }, { kind: 'passed', item: r.item })
       } else {
-        return { ...g, rev: g.rev + 1, round: { ...r, turn: them, passes, log: log(`${name} passed`) } }
+        const text = tossesLeft(g) > 0 ? `${name} wants to pass` : `${name} is out of cash and passed`
+        return { ...g, rev: g.rev + 1, round: { ...r, turn: them, passes, log: log(text) } }
       }
       break
     }
@@ -284,6 +302,7 @@ export function rematch(g: GameState): GameState {
     discard: [],
     lot: 0,
     votes: [null, null],
+    tosses: 0,
     players: g.players.map((p) => ({ ...p, money: g.settings.budget, roster: [] })),
     rev: g.rev + 1,
   }

@@ -148,7 +148,7 @@ export function Home({ name, setName, onHost, onJoin, error, busy, initialCode }
             <span className="n">03</span>
             <span>
               <strong>Hate it? Pay them</strong>
-              Hand your opponent cash to take a lot off the table. Or both pass.
+              Hand your opponent cash to take a lot off the table. Or both agree to pass (3 per game).
             </span>
           </div>
           <div className="rule">

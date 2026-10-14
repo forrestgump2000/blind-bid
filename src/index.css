@@ -278,7 +278,7 @@ button:disabled {
   line-height: 0.82;
   font-weight: 800;
   font-stretch: 75%;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.02em;
   margin: 0 0 22px;
   text-transform: uppercase;
 }

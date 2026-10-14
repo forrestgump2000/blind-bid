@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCategory } from '../data/index.ts'
-import { options, other, type GameState, type Outcome, type Player, type Seat } from '../game/engine.ts'
+import { options, other, PASS_LIMIT, tossesLeft, type GameState, type Outcome, type Player, type Seat } from '../game/engine.ts'
 import type { Room } from '../net/useRoom.ts'
 import { LotCard, Thumb } from './LotCard.tsx'
 import { preload } from './images.ts'
@@ -116,7 +116,7 @@ function headline(g: GameState, seat: Seat): string {
     return `${nm(o.seat)} ${o.seat === seat ? 'got' : 'gets'} it for $${o.amount}`
   }
   if (r.high) return r.high.by === seat ? 'You’re winning' : `${g.players[r.high.by].name} is winning`
-  if (r.passes) return `${g.players[other(r.turn)].name} passed`
+  if (r.passes) return `${nm(other(r.turn))} ${other(r.turn) === seat ? 'want' : 'wants'} to pass`
   return 'Opening bid is $1'
 }
 
@@ -155,12 +155,13 @@ export function Game({ room }: { room: Room }) {
     if (myTurn) {
       if (opt.solo) return `${opp.name} is full — it’s just you now`
       if (r.high && r.high.by === them) return `${opp.name} bid $${r.high.amount}. Your call.`
-      if (r.passes === 1) return `${opp.name} passed. Your call.`
+      if (r.passes === 1) return opt.canPass ? `${opp.name} wants to pass. Agree?` : `${opp.name} passed. Someone has to take it.`
       return 'Your move'
     }
     return `Waiting on ${opp.name}`
-  }, [r, myTurn, opt.solo, opp.name, them])
+  }, [r, myTurn, opt.solo, opt.canPass, opp.name, them])
 
+  const passesLeft = tossesLeft(g)
   const highBy = r.high ? (r.high.by === seat ? 'you' : 'them') : 'none'
   const lotLabel = `Lot ${String(r.lot).padStart(2, '0')}`
 
@@ -175,7 +176,7 @@ export function Game({ room }: { room: Room }) {
           <div className="lotline">
             <span className="eyebrow">{cat?.name}</span>
             <span className="eyebrow mono">
-              {lotLabel} · {g.deck.length} left
+              {lotLabel} · {g.deck.length} left · {passesLeft}/{PASS_LIMIT} passes
             </span>
           </div>
           <div className="progress" style={{ marginTop: 8 }}>
@@ -253,6 +254,9 @@ export function Game({ room }: { room: Room }) {
                 </>
               )}
               {!opt.canBid && !opt.canFold && <div className="dump-note">You’re out of cash, so you can only pass on this one.</div>}
+              {opt.canBid && !opt.canPass && !r.high && !opt.solo && (
+                <div className="dump-note">{passesLeft === 0 ? 'All 3 passes are used up. Bid on it or pay them to take it.' : ''}</div>
+              )}
               <div className="two">
                 {opt.canFold && (
                   <button className="btn btn-ghost" onClick={() => room.act({ type: 'fold' })} style={{ gridColumn: opt.canDump ? undefined : '1 / -1' }}>
@@ -261,7 +265,7 @@ export function Game({ room }: { room: Room }) {
                 )}
                 {opt.canPass && (
                   <button className="btn btn-ghost" onClick={() => room.act({ type: 'pass' })} style={{ gridColumn: opt.canDump ? undefined : '1 / -1' }}>
-                    {opt.solo || r.passes === 1 ? 'Pass · toss it' : 'Pass'}
+                    {opt.solo ? 'Pass · toss it' : r.passes === 1 ? 'Agree to pass' : 'Pass'}
                   </button>
                 )}
                 {opt.canDump && (
@@ -277,7 +281,9 @@ export function Game({ room }: { room: Room }) {
             <div className="dump-note">
               {r.high?.by === seat
                 ? `You’re on $${r.high.amount}. ${opp.name} can raise, or let it go.`
-                : `${opp.name} can bid, pass, or pay you to take it.`}
+                : r.passes === 1 && passesLeft > 0
+                  ? `You want to pass. ${opp.name} has to agree, or bid instead.`
+                  : `${opp.name} can bid${passesLeft > 0 ? ', pass,' : ''} or pay you to take it.`}
             </div>
           )}
 

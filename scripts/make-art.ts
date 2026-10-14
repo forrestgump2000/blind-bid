@@ -132,8 +132,8 @@ const c2 = await card('pokemon', 'Pikachu', 'Pokémon · No. 025', 'LOT 12', tru
 const c3 = await card('movies', 'The Dark Knight', 'All Movies', 'LOT 03')
 
 const eyebrow = text(mono, 'A TWO-PLAYER DRAFT AUCTION', 72, 132, 18, { tracking: 0.16 })
-const blind = text(display, 'BLIND', 64, 330, 236, { tracking: -0.02 })
-const bid = text(display, 'BID', 64, 520, 236, { tracking: -0.02 })
+const blind = text(display, 'BLIND', 64, 330, 236, { tracking: 0.02 })
+const bid = text(display, 'BID', 64, 520, 236, { tracking: 0.02 })
 const tag1 = text(body, 'Same budget. Random lots.', 74, 582, 30)
 const paddleQ = text(display, '$20', 0, 0, 30, { anchor: 'middle' })
 
